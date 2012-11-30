@@ -19,6 +19,7 @@ set(HEADERS
 )
 
 set(MOC
+    test_signal.h
 )
 
 set(SOURCES
