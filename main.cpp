@@ -1,10 +1,8 @@
 
-
 #include <iostream>
 #include <functional>
 
 #include <boost/function.hpp>
-
 #include <boost/python.hpp>
 
 #include <QApplication>
@@ -14,159 +12,136 @@
 #include "test_signal.h"
 
 using namespace std;
-
-
-using namespace boost;
-using namespace boost::python;
-using namespace boost::python::converter;
 namespace py = boost::python;
 
-
-qint64 unwrap(const QObject& ptr) {
-    return reinterpret_cast<qint64>(&ptr);
-}
-
-QObject& wrap(qint64 pyptr) {
-    return reinterpret_cast<QObject&>(pyptr);
-}
-
-/** to-python convert to QObjects */
-struct QObject_to_python
+/** Class to create PyQt and C++ Qt pointer conversion */
+template <typename Object>
+struct QObject_and_PyQt
 {
-    static PyObject* convert(const QObject& obj)
-    {
-        return boost::python::incref(py::object(unwrap(obj)).ptr());
-    }
-};
-
-struct QWidget_from_python
-{
-	QWidget_from_python()
+	QObject_and_PyQt(const std::string& classname, py::object& main_namespace)
 	{
-		boost::python::converter::registry::push_back(
-		&convertible,
-		&construct,
-		boost::python::type_id<QWidget*>());
-
-		boost::python::converter::registry::push_back(
-		&convertible,
-		&construct,
-		boost::python::type_id<QWidget>());
-
-		boost::python::converter::registry::push_back(
-		&convertible,
-		&construct,
-		boost::python::type_id<QWidget&>());
-
-		boost::python::converter::registry::push_back(
-		&convertible,
-		&construct,
-		boost::python::type_id<const QWidget&>());
+		name_ = classname;
+		main_namespace_ = &main_namespace;
 	}
 
-	static void* convertible(PyObject* obj_ptr)
+	static PyObject* to_python(void const* obj)
 	{
-	//       if (!PyString_Check(obj_ptr)) return 0;
-// 		return obj_ptr;
+		//raw C++ pointer from any QObject
+		qint64 qptr = reinterpret_cast<qint64>(obj);
+		
+		try {
+			//evaluate PyQt4 class class from classname
+			py::object qtclass = py::eval(name_.c_str(), *main_namespace_, *main_namespace_);
+			//wrap raw C++ pointer with sip-class
+			py::object wrapped = py::import("sip").attr("wrapinstance")(qptr, qtclass);
+			
+			return py::incref(wrapped.ptr());
+		}
+		catch(py::error_already_set const &)
+		{
+			std::cerr << name_ << " to_python Exception:" << std::endl;
+			PyErr_Print();
+		}
+		catch(const std::exception& e) {
+			std::cerr << name_ << " to_python Exception:" << e.what() << std::endl;
+		}
+		catch(...){
+			std::cerr << name_ << " to_python Exception: Unknown" << std::endl;
+		}
 
-		std::cerr <<"HERE1" << std::endl;
-		std::cerr << obj_ptr->ob_type->tp_doc << std::endl;
+		return 0;
+	};
+
+	static void* from_python(PyObject* obj)
+	{
+		try {
+			//get raw C++ pointer from PyQt4 object
+			py::object unwrapped = py::import("sip").attr("unwrapinstance")(py::borrowed(obj));
+			quint64 qptr = py::extract<quint64>(unwrapped);
+			
+			return qobject_cast<Object*>(reinterpret_cast<QObject*>(qptr));
+		}
+		catch(py::error_already_set const &)
+		{
+			std::cerr << name_ << " from_python Exception:" << std::endl;
+			PyErr_Print();
+		}
+		catch(const std::exception& e) {
+			std::cerr << name_ << " from_python Exception:" << e.what() << std::endl;
+		}
+		catch(...){
+			std::cerr << name_ << " from_python Exception: Unknown" << std::endl;
+		}
 
 		return 0;
 	}
 
-	static void construct(
-		PyObject* obj_ptr,
-		boost::python::converter::rvalue_from_python_stage1_data* data)
-	{
-		std::cerr << "HERE" << std::endl;
-// 		const char* value = PyString_AsString(obj_ptr);
-// 		
-// 		if (value == 0) boost::python::throw_error_already_set();
-// 		void* storage = (
-// 		(boost::python::converter::rvalue_from_python_storage<custom_string>*)
-// 			data)->storage.bytes;
-// 		new (storage) custom_string(value);
-// 		data->convertible = storage;
-	}
+private:
+	static py::object* main_namespace_;
+	static std::string name_;
 };
 
-void* extract_pointer_1(PyObject* obj)
-{
-	std::cerr << "HERE" << std::endl;
-	std::cerr << obj->ob_type->tp_doc << std::endl;
+template <typename Object>
+std::string QObject_and_PyQt<Object>::name_;
 
-	try {
-		object o1(borrowed(obj));
+template <typename Object>
+py::object* QObject_and_PyQt<Object>::main_namespace_;
+
+
+
+template <typename Object>
+void initialize_converter(const std::string& classname, py::object& main_namespace)
+{
+	// Configure convertert static members
+	QObject_and_PyQt<Object> converter(classname, main_namespace);
 	
-		object o2 = import("sip").attr("unwrapinstance")(o1);
-	
-		std::cerr << "here2" << std::endl;
-		std::cerr << "Val:" << extract<quint64>(o2) << std::endl;
-		std::cerr << "here3" << std::endl;
-	}
-	catch(const std::exception& e) {
-		std::cerr << "Exception:" << e.what() << std::endl;
-	}
-	
-// 		return incref(obj.ptr());
-// 		
-// 	if ()
-	
-	return 0;
+	// register the to-python converter
+	py::converter::registry::insert(converter.to_python, py::type_id<Object>());
+
+	// register the from-python converter
+	py::converter::registry::insert(converter.from_python, py::type_id<Object>());
 }
 
+/// help macros
+#define INITIALIZE_CONVERTER(classname, main_namespace)\
+	initialize_converter<classname>(#classname, main_namespace)
 
-
-void initializeConverters()
+void initializeConverters(py::object& main_namespace)
 {
-    // register the to-python converter
-    boost::python::to_python_converter<QObject, QObject_to_python>();
-
-	QWidget_from_python();
+	INITIALIZE_CONVERTER(QObject, main_namespace);
+	INITIALIZE_CONVERTER(QWidget, main_namespace);
 }
 
 int main(int argc, char* argv[])
 {
-    initializeConverters();
-    
     QApplication app(argc, argv);
     
     Py_Initialize();
 
-	converter::registry::insert(&extract_pointer_1, type_id<QWidget>());
-    
-    py::object main_module = py::import("__main__");
-    py::object main_namespace = main_module.attr("__dict__");
-    
-    main_namespace["sys"] = py::import("sys");
-
-    
-    TestSignal ts;
-    ts.connect(&ts, SIGNAL(activate(QString)), SLOT(print(QString)));
-
-// 	QLineEdit* le = new QLineEdit();
-
-// 	QObject* o = main_namespace["w"].extract<QObject*>();
-
     try
     {
+	
+		py::object main_module = py::import("__main__");
+		py::object main_namespace = main_module.attr("__dict__");
+
+		main_namespace["sys"] = py::import("sys");
+		main_namespace["sip"] = py::import("sip");
+		py::exec("from PyQt4.Qt import *", main_namespace, main_namespace);
+
+		initializeConverters(main_namespace);
+
+		TestSignal ts;
+		ts.connect(&ts, SIGNAL(activate(QString)), SLOT(print(QString)));
+
         main_namespace["ts_raw"] = static_cast<QObject&>(ts);
 		main_namespace["www"] = 1;
 		main_namespace["iww"] = 1;
 
-	
-        boost::python::exec_file("./main.py", main_namespace, main_namespace);
-
-		std::cerr << "ok cerr" << std::endl;
-		std::cout << "ok cout" << std::endl;
-// 
-// 		py::object o = main_namespace["w"];
-		
-// 		std::cerr << get_lvalue_from_python(o.ptr(), registered_pointee<QWidget>::converters) << std::endl;;
+	    boost::python::exec_file("./main.py", main_namespace, main_namespace);
 
 		try{
 			QWidget* o = py::extract<QWidget*>(main_namespace["www"]);
+			std::cerr << "Win class name:" << o << std::endl;
 		}
 		catch(...) {
 			PyErr_Print();

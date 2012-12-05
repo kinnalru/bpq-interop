@@ -2,8 +2,7 @@
 
 import sys
 import sip
-from PyQt4 import QtGui
-from PyQt4 import QtCore
+from PyQt4.Qt import *
 
 #wrap raw pointer to specified Qt-class
 def wrap(type, ptr):
@@ -14,21 +13,21 @@ def wrap(type, ptr):
 	# ts_raw - loaded from C++ environment
 
 print("raw value:", ts_raw);
-ts_wrapped = wrap(QtCore.QObject, ts_raw);
+ts_wrapped = ts_raw;
 ts_wrapped.trigger_str("hello from python!")
 
-app = QtCore.QCoreApplication.instance()
-if not (app): app = QtGui.QApplication(sys.argv)
+app = QCoreApplication.instance()
+if not (app): app = QApplication(sys.argv)
 
 
 print("raw www:", www);
-www = QtGui.QWidget()
+www = QWidget()
 print("raw2 www:", www);
 www.resize(250, 150)
 www.move(300, 300)
 www.setWindowTitle('Simple')
 
-btn = QtGui.QPushButton('Button', www)
+btn = QPushButton('Button', www)
 btn.setToolTip('This is a <b>QPushButton</b> widget')
 btn.resize(btn.sizeHint())
 btn.move(50, 50)
