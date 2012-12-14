@@ -110,6 +110,9 @@ void initializeConverters(py::object& main_namespace)
 {
 	INITIALIZE_CONVERTER(QObject, main_namespace);
 	INITIALIZE_CONVERTER(QWidget, main_namespace);
+// 	py::class_<TestSignal, py::bases<QObject>, boost::noncopyable >("TestSignal");
+	INITIALIZE_CONVERTER(TestSignal, main_namespace);	
+    
 }
 
 int main(int argc, char* argv[])
@@ -133,7 +136,7 @@ int main(int argc, char* argv[])
 		TestSignal ts;
 		ts.connect(&ts, SIGNAL(activate(QString)), SLOT(print(QString)));
 
-        main_namespace["ts_raw"] = static_cast<QObject&>(ts);
+        main_namespace["ts_raw"] = ts;
 		main_namespace["www"] = 1;
 		main_namespace["iww"] = 1;
 
